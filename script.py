@@ -66,19 +66,48 @@ def find_column_by_keywords(df: pd.DataFrame, keywords: List[str]) -> Optional[s
 
 
 def safe_divide(numerator, denominator):
-    """Element-wise safe divide: if denominator is 0 or NaN, return numerator; else numerator/denominator."""
-    num = pd.to_numeric(numerator, errors="coerce") if not isinstance(numerator, (pd.Series, pd.DataFrame)) else numerator
-    den = pd.to_numeric(denominator, errors="coerce") if not isinstance(denominator, (pd.Series, pd.DataFrame)) else denominator
-    # Broadcast-compatible mask
-    mask = (den == 0) | pd.isna(den)
+    """Robust element-wise divide that tolerates zeros/NaNs and scalar denominators.
+
+    Rules:
+    - If denominator is 0 or NaN → return numerator
+    - Otherwise → return numerator / denominator
+    Works for scalars, Series, and DataFrames without shape-mismatch errors.
+    """
+    # Normalize inputs to pandas objects when possible for consistent behavior
+    num = numerator
+    den = denominator
+    if not isinstance(num, (pd.Series, pd.DataFrame)):
+        num = pd.to_numeric(num, errors="coerce")
+    if not isinstance(den, (pd.Series, pd.DataFrame)):
+        den = pd.to_numeric(den, errors="coerce")
+
+    # Fast-path: scalar denominator (common in min-max normalization)
+    if np.isscalar(den) or (isinstance(den, (pd.Series, pd.DataFrame)) and den.size == 1):
+        den_scalar = den if np.isscalar(den) else (den.values.item() if hasattr(den, "values") else float(den))
+        if pd.isna(den_scalar) or den_scalar == 0:
+            return num
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return num / den_scalar
+
+    # General case: align shapes where possible
+    aligned_den = den
+    if isinstance(num, pd.Series) and isinstance(den, pd.Series):
+        aligned_den = den.reindex_like(num)
+    elif isinstance(num, pd.DataFrame) and isinstance(den, pd.DataFrame):
+        aligned_den = den.reindex_like(num)
+
+    mask = (aligned_den == 0) | pd.isna(aligned_den)
+
     with np.errstate(divide="ignore", invalid="ignore"):
-        result = num / den
-    # Where denom invalid, use numerator
-    result = result.where(~mask, num)
-    # Replace any residual inf/-inf with numerator
+        result = num / aligned_den
+
+    # Where denominator invalid, fall back to numerator
     if isinstance(result, (pd.Series, pd.DataFrame)):
-        result = result.replace([np.inf, -np.inf], np.nan).where(~mask, num)
+        result = result.mask(mask, num)
+        result = result.replace([np.inf, -np.inf], np.nan).mask(mask, num)
     else:
+        if bool(np.any(mask)):
+            result = num
         if np.isinf(result):
             result = num
     return result
@@ -201,11 +230,11 @@ def section_marketing(marketing_df: pd.DataFrame):
         st.metric("Total Orders", f"{int(total_orders):,}")
     with kpi_cols[1]:
         total_sales = daily.get("Sales", pd.Series(dtype=float)).sum()
-        st.metric("Total Sales", f"₹{total_sales:,.0f}")
+        st.metric("Total Sales", f"${total_sales:,.0f}")
     with kpi_cols[2]:
         aov = daily.get("Average Order Value", pd.Series(dtype=float)).mean()
         if pd.notnull(aov):
-            st.metric("Average Order Value", f"₹{aov:,.2f}")
+            st.metric("Average Order Value", f"${aov:,.2f}")
         else:
             st.metric("Average Order Value", "—")
     with kpi_cols[3]:
@@ -237,8 +266,26 @@ def section_marketing(marketing_df: pd.DataFrame):
         comparison["Δ Absolute"] = comparison["Post"] - comparison["Pre"]
         comparison["Δ % Change"] = safe_divide(comparison["Δ Absolute"], comparison["Pre"]) * 100
 
+        # Ensure numeric dtypes to avoid formatting bugs and then build a display copy
+        numeric_cols = ["Pre", "Post", "Δ Absolute", "Δ % Change"]
+        comparison_numeric = comparison.copy()
+        for c in numeric_cols:
+            comparison_numeric[c] = pd.to_numeric(comparison_numeric[c], errors="coerce")
+
+        def fmt_int(x):
+            return "—" if pd.isna(x) else f"{x:,.0f}"
+
+        def fmt_pct(x):
+            return "—" if pd.isna(x) else f"{x:.2f}%"
+
+        display_df = comparison_numeric.copy()
+        display_df["Pre"] = comparison_numeric["Pre"].map(fmt_int)
+        display_df["Post"] = comparison_numeric["Post"].map(fmt_int)
+        display_df["Δ Absolute"] = comparison_numeric["Δ Absolute"].map(fmt_int)
+        display_df["Δ % Change"] = comparison_numeric["Δ % Change"].map(fmt_pct)
+
         st.markdown("**Pre vs Post comparison**")
-        st.dataframe(comparison.style.format({"Pre": ",.0f", "Post": ",.0f", "Δ Absolute": ",.0f", "Δ % Change": ".2f"}))
+        st.dataframe(display_df, use_container_width=True)
 
     # Time-series charts
     if px is not None and "Date" in daily.columns:
@@ -522,13 +569,13 @@ def section_sales(sales_df: pd.DataFrame):
     kpi_cols = st.columns(4)
     with kpi_cols[0]:
         gross = sales_df.get("Gross Sales", pd.Series(dtype=float)).sum()
-        st.metric("Gross Sales", f"₹{gross:,.0f}")
+        st.metric("Gross Sales", f"${gross:,.0f}")
     with kpi_cols[1]:
         delivered = sales_df.get("Total Delivered or Picked Up Orders", pd.Series(dtype=float)).sum()
         st.metric("Delivered Orders", f"{int(delivered):,}")
     with kpi_cols[2]:
         aov = sales_df.get("AOV", pd.Series(dtype=float)).mean()
-        st.metric("AOV", f"₹{aov:,.2f}" if pd.notnull(aov) else "—")
+        st.metric("AOV", f"${aov:,.2f}" if pd.notnull(aov) else "—")
     with kpi_cols[3]:
         fulfill_rate = sales_df.get("Fulfillment_Rate", pd.Series(dtype=float)).mean()
         st.metric("Avg Fulfillment Rate", f"{fulfill_rate*100:.2f}%" if pd.notnull(fulfill_rate) else "—")
@@ -617,16 +664,16 @@ def section_payouts(payout_df: pd.DataFrame):
 
     with kpi_cols[0]:
         net_payout = payout_df.get(net_payout_col, pd.Series(dtype=float)).sum()
-        st.metric("Net Payout", f"₹{net_payout:,.0f}")
+        st.metric("Net Payout", f"${net_payout:,.0f}")
     with kpi_cols[1]:
         subtotal = payout_df.get(subtotal_col, pd.Series(dtype=float)).sum()
-        st.metric("Subtotal", f"₹{subtotal:,.0f}")
+        st.metric("Subtotal", f"${subtotal:,.0f}")
     with kpi_cols[2]:
         commission = payout_df.get(commission_col, pd.Series(dtype=float)).sum()
-        st.metric("Commission", f"₹{commission:,.0f}")
+        st.metric("Commission", f"${commission:,.0f}")
     with kpi_cols[3]:
         mk_fees = payout_df.get(mk_fee_col, pd.Series(dtype=float)).sum()
-        st.metric("Marketing Fees", f"₹{mk_fees:,.0f}")
+        st.metric("Marketing Fees", f"${mk_fees:,.0f}")
 
     # Group by Store and Date
     if {"Store Name", "Payout Date"}.issubset(payout_df.columns):
@@ -676,7 +723,7 @@ def section_overview(marketing_df: pd.DataFrame, ops_df: pd.DataFrame, sales_df:
     # Gross Sales
     with c2:
         gross_sales = pd.to_numeric(sales_df.get("Gross Sales", pd.Series(dtype=float)), errors="coerce").sum()
-        st.metric("Gross Sales", f"₹{gross_sales:,.0f}")
+        st.metric("Gross Sales", f"${gross_sales:,.0f}")
 
     # Average Rating (Ops)
     with c3:
@@ -687,7 +734,7 @@ def section_overview(marketing_df: pd.DataFrame, ops_df: pd.DataFrame, sales_df:
     with c4:
         net_payout_col = find_column_by_keywords(payout_df, ["net payout"]) or "Net Payout"
         net_payout = pd.to_numeric(payout_df.get(net_payout_col, pd.Series(dtype=float)), errors="coerce").sum()
-        st.metric("Net Payout", f"₹{net_payout:,.0f}")
+        st.metric("Net Payout", f"${net_payout:,.0f}")
 
 
 # -------------------------------
