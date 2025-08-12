@@ -197,23 +197,18 @@ def section_marketing(marketing_df: pd.DataFrame):
     # Parse and prepare
     marketing_df = parse_datetime_column(marketing_df, "Date")
 
-    # Sidebar pre/post ranges (defaults match notebook)
+    # Marketing period comparison (fixed periods)
     st.sidebar.markdown("**Marketing period comparison**")
     default_pre_start = pd.Timestamp("2025-06-01")
     default_pre_end = pd.Timestamp("2025-07-02")
     default_post_start = pd.Timestamp("2025-07-03")
     default_post_end = pd.Timestamp("2025-08-03")
 
-    pre_range = st.sidebar.date_input(
-        "Pre period",
-        value=(default_pre_start, default_pre_end),
-        key="mk_pre_range",
-    )
-    post_range = st.sidebar.date_input(
-        "Post period",
-        value=(default_post_start, default_post_end),
-        key="mk_post_range",
-    )
+    st.sidebar.info(f"📅 **Pre Period:** {default_pre_start.strftime('%Y-%m-%d')} to {default_pre_end.strftime('%Y-%m-%d')}")
+    st.sidebar.info(f"📅 **Post Period:** {default_post_start.strftime('%Y-%m-%d')} to {default_post_end.strftime('%Y-%m-%d')}")
+    
+    pre_range = (default_pre_start, default_pre_end)
+    post_range = (default_post_start, default_post_end)
 
     # Metrics of interest
     metrics = [
@@ -409,6 +404,165 @@ def section_marketing(marketing_df: pd.DataFrame):
         if Ridge is None:
             st.info("Install scikit-learn to enable regression: pip install scikit-learn")
 
+    # Store-wise breakdown of marketing metrics
+    if "Store Name" in marketing_df.columns and px is not None:
+        st.markdown("### 🏪 Store-wise Marketing Performance")
+        
+        # Store-wise metrics
+        store_metrics = marketing_df.groupby("Store Name").agg({
+            "Orders": "sum",
+            "Sales": "sum",
+            "Marketing Fees | (Including any applicable taxes)": "sum",
+            "New Customers Acquired": "sum"
+        }).reset_index()
+        
+        # Calculate ROI for each store
+        store_metrics["ROI"] = safe_divide(
+            store_metrics["Sales"], 
+            store_metrics["Marketing Fees | (Including any applicable taxes)"]
+        )
+        
+        # Display store-wise metrics
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Top stores by sales
+            top_stores_sales = store_metrics.nlargest(5, "Sales")
+            fig = px.bar(
+                top_stores_sales, 
+                x="Store Name", 
+                y="Sales", 
+                title="🏆 Top 5 Stores by Sales",
+                color="Sales",
+                color_continuous_scale="Blues"
+            )
+            fig.update_layout(
+                title_font_size=16,
+                title_font_color="#FF6B35",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            # Top stores by ROI
+            top_stores_roi = store_metrics.nlargest(5, "ROI")
+            fig = px.bar(
+                top_stores_roi, 
+                x="Store Name", 
+                y="ROI", 
+                title="💰 Top 5 Stores by ROI",
+                color="ROI",
+                color_continuous_scale="Greens"
+            )
+            fig.update_layout(
+                title_font_size=16,
+                title_font_color="#FF6B35",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Store-wise sales vs marketing spend over time
+        st.markdown("### 📈 Store-wise Sales vs Marketing Spend Over Time")
+        
+        # Prepare data for time series
+        if "Date" in marketing_df.columns:
+            store_time_data = marketing_df.groupby(["Store Name", "Date"]).agg({
+                "Sales": "sum",
+                "Marketing Fees | (Including any applicable taxes)": "sum"
+            }).reset_index()
+            
+            # Get top 5 stores for visualization
+            top_stores = store_metrics.nlargest(5, "Sales")["Store Name"].tolist()
+            top_stores_data = store_time_data[store_time_data["Store Name"].isin(top_stores)]
+            
+            # Sales over time by store
+            fig_sales = px.line(
+                top_stores_data, 
+                x="Date", 
+                y="Sales", 
+                color="Store Name",
+                title="📊 Sales Over Time by Store"
+            )
+            fig_sales.update_layout(
+                title_font_size=16,
+                title_font_color="#FF6B35",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)"
+            )
+            st.plotly_chart(fig_sales, use_container_width=True)
+            
+            # Marketing spend over time by store
+            fig_spend = px.line(
+                top_stores_data, 
+                x="Date", 
+                y="Marketing Fees | (Including any applicable taxes)", 
+                color="Store Name",
+                title="💸 Marketing Spend Over Time by Store"
+            )
+            fig_spend.update_layout(
+                title_font_size=16,
+                title_font_color="#FF6B35",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)"
+            )
+            st.plotly_chart(fig_spend, use_container_width=True)
+            
+            # Pre/Post comparison by store
+            st.markdown("### 📊 Pre/Post Marketing Impact by Store")
+            
+            pre_start, pre_end = pre_range
+            post_start, post_end = post_range
+            
+            # Filter data for pre and post periods
+            pre_data = marketing_df[
+                (marketing_df["Date"] >= pre_start) & 
+                (marketing_df["Date"] <= pre_end)
+            ]
+            post_data = marketing_df[
+                (marketing_df["Date"] >= post_start) & 
+                (marketing_df["Date"] <= post_end)
+            ]
+            
+            # Aggregate by store for each period
+            pre_store = pre_data.groupby("Store Name").agg({
+                "Sales": "sum",
+                "Marketing Fees | (Including any applicable taxes)": "sum"
+            }).reset_index()
+            pre_store["Period"] = "Pre"
+            
+            post_store = post_data.groupby("Store Name").agg({
+                "Sales": "sum",
+                "Marketing Fees | (Including any applicable taxes)": "sum"
+            }).reset_index()
+            post_store["Period"] = "Post"
+            
+            # Combine and calculate growth
+            combined_store = pd.concat([pre_store, post_store], ignore_index=True)
+            
+            # Pivot for visualization
+            store_pivot = combined_store.pivot(index="Store Name", columns="Period", values="Sales").reset_index()
+            store_pivot["Growth"] = safe_divide(store_pivot["Post"] - store_pivot["Pre"], store_pivot["Pre"]) * 100
+            
+            # Show top stores by growth
+            top_growth = store_pivot.nlargest(5, "Growth")
+            fig_growth = px.bar(
+                top_growth, 
+                x="Store Name", 
+                y="Growth", 
+                title="📈 Top 5 Stores by Sales Growth (Pre vs Post)",
+                color="Growth",
+                color_continuous_scale="RdYlGn"
+            )
+            fig_growth.update_layout(
+                title_font_size=16,
+                title_font_color="#FF6B35",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)"
+            )
+            st.plotly_chart(fig_growth, use_container_width=True)
+
 
 # -------------------------------
 # Section: Operations
@@ -553,6 +707,145 @@ def section_operations(ops_df: pd.DataFrame):
         st.markdown("**Delivered orders over time (by store)**")
         fig = px.line(ts, x="Week", y="Total Delivered or Picked Up Orders", color="Store Name")
         st.plotly_chart(fig, use_container_width=True)
+    
+    # Operations metrics over time
+    if px is not None and "Week" in ops_df.columns:
+        st.markdown("### 📈 Operations Metrics Over Time")
+        st.markdown("*How key operational metrics are moving with respect to time*")
+        
+        # Aggregate all operations metrics by week
+        weekly_ops = ops_df.groupby("Week").agg({
+            "Total Orders Including Cancelled Orders": "sum",
+            "Total Delivered or Picked Up Orders": "sum",
+            "Total Missing or Incorrect Orders": "sum",
+            "Total Error Charges": "sum",
+            "Total Cancelled Orders": "sum",
+            "Total Downtime in Minutes": "sum",
+            "Average Rating": "mean"
+        }).reset_index()
+        
+        # Create a comprehensive time series dashboard
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Orders metrics over time
+            fig_orders = px.line(
+                weekly_ops, 
+                x="Week", 
+                y=["Total Orders Including Cancelled Orders", "Total Delivered or Picked Up Orders", "Total Cancelled Orders"],
+                title="📦 Orders Metrics Over Time",
+                labels={"value": "Number of Orders", "variable": "Order Type"}
+            )
+            fig_orders.update_layout(
+                title_font_size=16,
+                title_font_color="#FF6B35",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)"
+            )
+            st.plotly_chart(fig_orders, use_container_width=True)
+            
+            # Quality metrics over time
+            fig_quality = px.line(
+                weekly_ops, 
+                x="Week", 
+                y=["Total Missing or Incorrect Orders", "Total Error Charges"],
+                title="⚠️ Quality Issues Over Time",
+                labels={"value": "Count", "variable": "Issue Type"}
+            )
+            fig_quality.update_layout(
+                title_font_size=16,
+                title_font_color="#FF6B35",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)"
+            )
+            st.plotly_chart(fig_quality, use_container_width=True)
+        
+        with col2:
+            # Downtime over time
+            fig_downtime = px.line(
+                weekly_ops, 
+                x="Week", 
+                y="Total Downtime in Minutes",
+                title="⏱️ Total Downtime Over Time",
+                labels={"Total Downtime in Minutes": "Minutes"}
+            )
+            fig_downtime.update_layout(
+                title_font_size=16,
+                title_font_color="#FF6B35",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)"
+            )
+            st.plotly_chart(fig_downtime, use_container_width=True)
+            
+            # Average Rating over time
+            fig_rating = px.line(
+                weekly_ops, 
+                x="Week", 
+                y="Average Rating",
+                title="⭐ Average Rating Over Time",
+                labels={"Average Rating": "Rating"}
+            )
+            fig_rating.update_layout(
+                title_font_size=16,
+                title_font_color="#FF6B35",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)"
+            )
+            st.plotly_chart(fig_rating, use_container_width=True)
+        
+        # Store-wise operations performance over time
+        st.markdown("### 🏪 Store-wise Operations Performance Over Time")
+        
+        if {"Store Name", "Week"}.issubset(ops_df.columns):
+            # Get top 5 stores by total delivered orders
+            top_stores = ops_df.groupby("Store Name")["Total Delivered or Picked Up Orders"].sum().nlargest(5).index.tolist()
+            
+            # Filter data for top stores
+            top_stores_data = ops_df[ops_df["Store Name"].isin(top_stores)]
+            
+            # Store-wise delivered orders over time
+            store_orders = top_stores_data.groupby(["Store Name", "Week"])["Total Delivered or Picked Up Orders"].sum().reset_index()
+            
+            fig_store_orders = px.line(
+                store_orders, 
+                x="Week", 
+                y="Total Delivered or Picked Up Orders", 
+                color="Store Name",
+                title="📦 Top 5 Stores: Delivered Orders Over Time"
+            )
+            fig_store_orders.update_layout(
+                title_font_size=16,
+                title_font_color="#FF6B35",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)"
+            )
+            st.plotly_chart(fig_store_orders, use_container_width=True)
+            
+            # Store-wise cancellation rates over time
+            store_cancellations = top_stores_data.groupby(["Store Name", "Week"]).agg({
+                "Total Orders Including Cancelled Orders": "sum",
+                "Total Cancelled Orders": "sum"
+            }).reset_index()
+            
+            store_cancellations["Cancellation Rate"] = safe_divide(
+                store_cancellations["Total Cancelled Orders"], 
+                store_cancellations["Total Orders Including Cancelled Orders"]
+            ) * 100
+            
+            fig_cancel_rate = px.line(
+                store_cancellations, 
+                x="Week", 
+                y="Cancellation Rate", 
+                color="Store Name",
+                title="❌ Top 5 Stores: Cancellation Rate Over Time (%)"
+            )
+            fig_cancel_rate.update_layout(
+                title_font_size=16,
+                title_font_color="#FF6B35",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)"
+            )
+            st.plotly_chart(fig_cancel_rate, use_container_width=True)
 
 
 # -------------------------------
@@ -856,7 +1149,7 @@ def section_overview(marketing_df: pd.DataFrame, ops_df: pd.DataFrame, sales_df:
             card(
                 title="📂 Files Loaded",
                 text=f"{files_count}/4 datasets successfully loaded",
-                image="https://img.icons8.com/color/96/000000/folder-invoices.png",
+                image="https://img.icons8.com/color/96/000000/database.png",
                 url=None
             )
         
@@ -864,7 +1157,7 @@ def section_overview(marketing_df: pd.DataFrame, ops_df: pd.DataFrame, sales_df:
             card(
                 title="📊 Total Rows",
                 text=f"{total_rows:,} data points across all files",
-                image="https://img.icons8.com/color/96/000000/data-configuration.png",
+                image="https://img.icons8.com/color/96/000000/analytics.png",
                 url=None
             )
         
@@ -872,7 +1165,7 @@ def section_overview(marketing_df: pd.DataFrame, ops_df: pd.DataFrame, sales_df:
             card(
                 title="📋 Total Columns",
                 text=f"{total_columns} unique data fields",
-                image="https://img.icons8.com/color/96/000000/columns.png",
+                image="https://img.icons8.com/color/96/000000/settings.png",
                 url=None
             )
         
@@ -945,24 +1238,15 @@ def section_overview(marketing_df: pd.DataFrame, ops_df: pd.DataFrame, sales_df:
     
     with col1:
         st.metric("📢 Unique Campaigns", f"{len(all_campaigns)}")
-        if badge:
-            badge(type="success", text=f"{len(all_campaigns)} campaigns active")
     
     with col2:
         st.metric("🔧 Key Features", f"{len(important_features)}")
-        if badge:
-            badge(type="info", text=f"{len(important_features)} key metrics tracked")
     
     with col3:
         st.metric("✅ Data Completeness", f"{completeness:.1f}%")
-        if badge:
-            badge(type="success" if completeness > 80 else "warning", 
-                  text=f"{completeness:.1f}% complete")
     
     with col4:
         st.metric("📅 Date Range", date_range_days)
-        if badge and date_range_days != "N/A":
-            badge(type="primary", text=f"{date_range_days} coverage")
 
     # File-specific breakdown with detailed analysis
     st.markdown("### 📋 File Breakdown")
@@ -988,25 +1272,10 @@ def section_overview(marketing_df: pd.DataFrame, ops_df: pd.DataFrame, sales_df:
             if len(dates) > 0:
                 date_range = f"{dates.min().strftime('%Y-%m-%d')} to {dates.max().strftime('%Y-%m-%d')}"
         
-        # Count unique stores
-        unique_stores = 0
-        if "Store Name" in df.columns:
-            unique_stores = len(df["Store Name"].dropna().unique())
-        elif "Store ID" in df.columns:
-            unique_stores = len(df["Store ID"].dropna().unique())
-        
-        # Count unique campaigns
-        unique_campaigns = 0
-        campaign_cols = [col for col in df.columns if 'campaign' in col.lower()]
-        for col in campaign_cols:
-            unique_campaigns += len(df[col].dropna().unique())
-        
         file_data.append({
             "File": name,
             "Rows": len(df),
             "Columns": len(df.columns),
-            "Unique Stores": unique_stores,
-            "Unique Campaigns": unique_campaigns,
             "Date Range": date_range
         })
     
@@ -1073,24 +1342,7 @@ def section_overview(marketing_df: pd.DataFrame, ops_df: pd.DataFrame, sales_df:
             )
             st.plotly_chart(fig1, use_container_width=True)
             
-            # Unique stores by file
-            if "Unique Stores" in file_df.columns and file_df["Unique Stores"].sum() > 0:
-                fig3 = px.bar(
-                    file_df, 
-                    x="File", 
-                    y="Unique Stores", 
-                    title="🏪 Unique Stores by File",
-                    color="File",
-                    color_discrete_sequence=px.colors.qualitative.Pastel,
-                    template="plotly_dark"
-                )
-                fig3.update_layout(
-                    title_font_size=16,
-                    title_font_color="#FF6B35",
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    paper_bgcolor="rgba(0,0,0,0)"
-                )
-                st.plotly_chart(fig3, use_container_width=True)
+
         
         with col2:
             # Column count comparison with enhanced styling
@@ -1111,37 +1363,18 @@ def section_overview(marketing_df: pd.DataFrame, ops_df: pd.DataFrame, sales_df:
             )
             st.plotly_chart(fig2, use_container_width=True)
             
-            # Unique campaigns by file
-            if "Unique Campaigns" in file_df.columns and file_df["Unique Campaigns"].sum() > 0:
-                fig4 = px.bar(
-                    file_df, 
-                    x="File", 
-                    y="Unique Campaigns", 
-                    title="📢 Unique Campaigns by File",
-                    color="File",
-                    color_discrete_sequence=px.colors.qualitative.Set2,
-                    template="plotly_dark"
-                )
-                fig4.update_layout(
-                    title_font_size=16,
-                    title_font_color="#FF6B35",
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    paper_bgcolor="rgba(0,0,0,0)"
-                )
-                st.plotly_chart(fig4, use_container_width=True)
+
         
         # Enhanced Summary Statistics
         st.markdown("### 📊 Summary Statistics")
         st.markdown("*Overall data summary across all datasets*")
         
         summary_data = {
-            "📁 Metric": ["Total Files", "Total Rows", "Total Columns", "Total Unique Stores", "Total Unique Campaigns"],
+            "📁 Metric": ["Total Files", "Total Rows", "Total Columns"],
             "📈 Value": [
                 files_count,
                 total_rows,
-                total_columns,
-                len(all_stores),
-                len(all_campaigns)
+                total_columns
             ]
         }
         summary_df = pd.DataFrame(summary_data)
@@ -1301,7 +1534,8 @@ def main():
             selected = "Overview"
 
         st.markdown("---")
-        st.header("🔍 Global Filters")
+        st.header("🔍 Overall Date Filter")
+        
     # Determine min/max dates across datasets for convenience
     date_candidates: List[Tuple[pd.Series, str]] = []
     if "Date" in mk.columns:
@@ -1319,7 +1553,7 @@ def main():
 
     date_filter = None
     if min_date is not None and max_date is not None:
-        date_filter = st.sidebar.date_input("Date range", (min_date, max_date))
+        date_filter = st.sidebar.date_input("Overall Date Range", (min_date, max_date))
 
     if isinstance(date_filter, tuple) and len(date_filter) == 2:
         start_date = pd.to_datetime(date_filter[0])
