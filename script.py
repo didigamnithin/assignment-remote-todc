@@ -5,6 +5,22 @@ from typing import List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+# Enhanced UI imports for colourful dashboard
+try:
+    from streamlit_extras.metric_cards import style_metric_cards
+    from streamlit_extras.colored_header import colored_header
+    from streamlit_extras.badges import badge
+    from streamlit_option_menu import option_menu
+    from streamlit_card import card
+    from streamlit_lottie import st_lottie
+except Exception:  # pragma: no cover
+    style_metric_cards = None
+    colored_header = None
+    badge = None
+    option_menu = None
+    card = None
+    st_lottie = None
+
 # Guard optional plotting libs to avoid hard failures
 try:
     import plotly.express as px
@@ -163,9 +179,19 @@ def make_metric_card(label: str, value, delta: Optional[str] = None, help_text: 
 # -------------------------------
 
 def section_marketing(marketing_df: pd.DataFrame):
-    st.subheader("Marketing")
+    # Colourful section header
+    if colored_header:
+        colored_header(
+            label="📢 Marketing Analytics",
+            description="Campaign performance, customer acquisition, and ROI analysis",
+            color_name="green-70"
+        )
+    else:
+        st.markdown("## 📢 Marketing Analytics")
+        st.markdown("*Campaign performance, customer acquisition, and ROI analysis*")
+    
     if marketing_df.empty:
-        st.info("Marketing CSV not found or empty.")
+        st.info("📭 Marketing CSV not found or empty.")
         return
 
     # Parse and prepare
@@ -389,9 +415,19 @@ def section_marketing(marketing_df: pd.DataFrame):
 # -------------------------------
 
 def section_operations(ops_df: pd.DataFrame):
-    st.subheader("Operations")
+    # Colourful section header
+    if colored_header:
+        colored_header(
+            label="⚙️ Operations Analytics",
+            description="Store performance, ratings, and operational efficiency metrics",
+            color_name="purple-70"
+        )
+    else:
+        st.markdown("## ⚙️ Operations Analytics")
+        st.markdown("*Store performance, ratings, and operational efficiency metrics*")
+    
     if ops_df.empty:
-        st.info("Operations CSV not found or empty.")
+        st.info("📭 Operations CSV not found or empty.")
         return
 
     ops_df = parse_datetime_column(ops_df, "Start Date")
@@ -524,9 +560,19 @@ def section_operations(ops_df: pd.DataFrame):
 # -------------------------------
 
 def section_sales(sales_df: pd.DataFrame):
-    st.subheader("Sales")
+    # Colourful section header
+    if colored_header:
+        colored_header(
+            label="💰 Sales Analytics",
+            description="Revenue analysis, order trends, and financial performance",
+            color_name="orange-70"
+        )
+    else:
+        st.markdown("## 💰 Sales Analytics")
+        st.markdown("*Revenue analysis, order trends, and financial performance*")
+    
     if sales_df.empty:
-        st.info("Sales CSV not found or empty.")
+        st.info("📭 Sales CSV not found or empty.")
         return
 
     sales_df = parse_datetime_column(sales_df, "Start Date")
@@ -648,9 +694,19 @@ def section_sales(sales_df: pd.DataFrame):
 # -------------------------------
 
 def section_payouts(payout_df: pd.DataFrame):
-    st.subheader("Payouts")
+    # Colourful section header
+    if colored_header:
+        colored_header(
+            label="💸 Payouts Analytics",
+            description="Payment analysis, commission tracking, and financial settlements",
+            color_name="red-70"
+        )
+    else:
+        st.markdown("## 💸 Payouts Analytics")
+        st.markdown("*Payment analysis, commission tracking, and financial settlements*")
+    
     if payout_df.empty:
-        st.info("Payouts CSV not found or empty.")
+        st.info("📭 Payouts CSV not found or empty.")
         return
 
     payout_df = parse_datetime_column(payout_df, "Payout Date")
@@ -690,7 +746,22 @@ def section_payouts(payout_df: pd.DataFrame):
         grouped = payout_df.groupby(["Store Name", "Payout Date"])[metrics].sum().reset_index()
 
         stores = ["All Stores"] + sorted(grouped["Store Name"].unique().tolist())
-        selected_store = st.selectbox("Store", stores)
+        
+        # Create store selection with buttons
+        st.markdown("**Select Store:**")
+        
+        # Create a grid of buttons for store selection
+        cols = st.columns(3)  # 3 columns for better layout
+        
+        selected_store = "All Stores"  # default
+        
+        for i, store in enumerate(stores):
+            col_idx = i % 3
+            with cols[col_idx]:
+                if st.button(store, key=f"store_{i}", use_container_width=True):
+                    selected_store = store
+        
+        # Apply the selection
         if selected_store != "All Stores":
             data = grouped[grouped["Store Name"] == selected_store].sort_values("Payout Date")
         else:
@@ -707,34 +778,391 @@ def section_payouts(payout_df: pd.DataFrame):
 # -------------------------------
 
 def section_overview(marketing_df: pd.DataFrame, ops_df: pd.DataFrame, sales_df: pd.DataFrame, payout_df: pd.DataFrame):
-    st.subheader("Overview")
+    # Colourful section header
+    if colored_header:
+        colored_header(
+            label="📊 Data Overview Dashboard",
+            description="Comprehensive insights across all DoorDash datasets",
+            color_name="blue-70"
+        )
+    else:
+        st.markdown("## 📊 Data Overview Dashboard")
+        st.markdown("*Comprehensive insights across all DoorDash datasets*")
+    
+    # Enhanced KPI cards with icons and colours
+    st.markdown("### 🎯 Key Performance Indicators")
+    
+    # Calculate metrics
+    total_orders = np.nan
+    if "Total Delivered or Picked Up Orders" in sales_df.columns:
+        total_orders = pd.to_numeric(sales_df["Total Delivered or Picked Up Orders"], errors="coerce").sum()
+    elif "Orders" in marketing_df.columns:
+        total_orders = pd.to_numeric(marketing_df["Orders"], errors="coerce").sum()
+    val = int(total_orders) if pd.notnull(total_orders) else 0
+    
+    gross_sales = pd.to_numeric(sales_df.get("Gross Sales", pd.Series(dtype=float)), errors="coerce").sum()
+    avg_rating = pd.to_numeric(ops_df.get("Average Rating", pd.Series(dtype=float)), errors="coerce").mean()
+    net_payout_col = find_column_by_keywords(payout_df, ["net payout"]) or "Net Payout"
+    net_payout = pd.to_numeric(payout_df.get(net_payout_col, pd.Series(dtype=float)), errors="coerce").sum()
+    
+    # Use regular metrics with styling
     c1, c2, c3, c4 = st.columns(4)
-
-    # Total orders (prefer Sales delivered orders; fallback Marketing Orders)
+    
     with c1:
-        total_orders = np.nan
-        if "Total Delivered or Picked Up Orders" in sales_df.columns:
-            total_orders = pd.to_numeric(sales_df["Total Delivered or Picked Up Orders"], errors="coerce").sum()
-        elif "Orders" in marketing_df.columns:
-            total_orders = pd.to_numeric(marketing_df["Orders"], errors="coerce").sum()
-        val = int(total_orders) if pd.notnull(total_orders) else 0
-        st.metric("Total Orders", f"{val:,}")
-
-    # Gross Sales
+        st.metric("📦 Total Orders", f"{val:,}")
+    
     with c2:
-        gross_sales = pd.to_numeric(sales_df.get("Gross Sales", pd.Series(dtype=float)), errors="coerce").sum()
-        st.metric("Gross Sales", f"${gross_sales:,.0f}")
-
-    # Average Rating (Ops)
+        st.metric("💰 Gross Sales", f"${gross_sales:,.0f}")
+    
     with c3:
-        avg_rating = pd.to_numeric(ops_df.get("Average Rating", pd.Series(dtype=float)), errors="coerce").mean()
-        st.metric("Average Rating", f"{avg_rating:.2f}" if pd.notnull(avg_rating) else "—")
-
-    # Net Payout total
+        st.metric("⭐ Average Rating", f"{avg_rating:.2f}" if pd.notnull(avg_rating) else "—")
+    
     with c4:
-        net_payout_col = find_column_by_keywords(payout_df, ["net payout"]) or "Net Payout"
-        net_payout = pd.to_numeric(payout_df.get(net_payout_col, pd.Series(dtype=float)), errors="coerce").sum()
-        st.metric("Net Payout", f"${net_payout:,.0f}")
+        st.metric("💸 Net Payout", f"${net_payout:,.0f}")
+    
+    # Apply metric card styling if available
+    if style_metric_cards:
+        style_metric_cards()
+
+    # Data Overview with colourful cards
+    st.markdown("### 📁 Data Overview")
+    
+    # Calculate data overview metrics
+    files_count = sum([
+        1 if not df.empty else 0 
+        for df in [marketing_df, ops_df, sales_df, payout_df]
+    ])
+    
+    total_rows = sum([
+        len(df) for df in [marketing_df, ops_df, sales_df, payout_df]
+    ])
+    
+    total_columns = sum([
+        len(df.columns) for df in [marketing_df, ops_df, sales_df, payout_df]
+    ])
+    
+    all_stores = set()
+    for df in [marketing_df, ops_df, sales_df, payout_df]:
+        if "Store Name" in df.columns:
+            all_stores.update(df["Store Name"].dropna().unique())
+        if "Store ID" in df.columns:
+            all_stores.update(df["Store ID"].dropna().astype(str).unique())
+    
+    # Use colourful cards if available
+    if card:
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            card(
+                title="📂 Files Loaded",
+                text=f"{files_count}/4 datasets successfully loaded",
+                image="https://img.icons8.com/color/96/000000/folder-invoices.png",
+                url=None
+            )
+        
+        with col2:
+            card(
+                title="📊 Total Rows",
+                text=f"{total_rows:,} data points across all files",
+                image="https://img.icons8.com/color/96/000000/data-configuration.png",
+                url=None
+            )
+        
+        with col3:
+            card(
+                title="📋 Total Columns",
+                text=f"{total_columns} unique data fields",
+                image="https://img.icons8.com/color/96/000000/columns.png",
+                url=None
+            )
+        
+        with col4:
+            card(
+                title="🏪 Unique Stores",
+                text=f"{len(all_stores)} distinct store locations",
+                image="https://img.icons8.com/color/96/000000/shop.png",
+                url=None
+            )
+    else:
+        # Fallback to regular metrics
+        c5, c6, c7, c8 = st.columns(4)
+        
+        with c5:
+            st.metric("📂 Files Loaded", f"{files_count}/4")
+        
+        with c6:
+            st.metric("📊 Total Rows", f"{total_rows:,}")
+        
+        with c7:
+            st.metric("📋 Total Columns", f"{total_columns}")
+        
+        with c8:
+            st.metric("🏪 Unique Stores", f"{len(all_stores)}")
+
+    # Campaign & Feature Analysis with colourful badges
+    st.markdown("### 🎯 Campaign & Feature Analysis")
+    
+    # Calculate campaign and feature metrics
+    all_campaigns = set()
+    for df in [marketing_df, ops_df, sales_df, payout_df]:
+        campaign_cols = [col for col in df.columns if 'campaign' in col.lower()]
+        for col in campaign_cols:
+            all_campaigns.update(df[col].dropna().unique())
+    
+    important_features = set()
+    key_metrics = [
+        'orders', 'sales', 'revenue', 'commission', 'payout', 'rating', 
+        'delivery', 'cancellation', 'downtime', 'promotion', 'ad', 'discount'
+    ]
+    for df in [marketing_df, ops_df, sales_df, payout_df]:
+        for col in df.columns:
+            col_lower = col.lower()
+            if any(metric in col_lower for metric in key_metrics):
+                important_features.add(col)
+    
+    total_cells = sum([
+        df.size for df in [marketing_df, ops_df, sales_df, payout_df]
+    ])
+    non_null_cells = sum([
+        df.count().sum() for df in [marketing_df, ops_df, sales_df, payout_df]
+    ])
+    completeness = (non_null_cells / total_cells * 100) if total_cells > 0 else 0
+    
+    all_dates = []
+    for df in [marketing_df, ops_df, sales_df, payout_df]:
+        date_cols = [col for col in df.columns if 'date' in col.lower()]
+        for col in date_cols:
+            dates = pd.to_datetime(df[col], errors='coerce').dropna()
+            all_dates.extend(dates)
+    
+    date_range_days = "N/A"
+    if all_dates:
+        date_range = max(all_dates) - min(all_dates)
+        date_range_days = f"{date_range.days} days"
+    
+    # Display with colourful badges and metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("📢 Unique Campaigns", f"{len(all_campaigns)}")
+        if badge:
+            badge(type="success", text=f"{len(all_campaigns)} campaigns active")
+    
+    with col2:
+        st.metric("🔧 Key Features", f"{len(important_features)}")
+        if badge:
+            badge(type="info", text=f"{len(important_features)} key metrics tracked")
+    
+    with col3:
+        st.metric("✅ Data Completeness", f"{completeness:.1f}%")
+        if badge:
+            badge(type="success" if completeness > 80 else "warning", 
+                  text=f"{completeness:.1f}% complete")
+    
+    with col4:
+        st.metric("📅 Date Range", date_range_days)
+        if badge and date_range_days != "N/A":
+            badge(type="primary", text=f"{date_range_days} coverage")
+
+    # File-specific breakdown with detailed analysis
+    st.markdown("### 📋 File Breakdown")
+    st.markdown("*Detailed analysis of each dataset's characteristics*")
+    file_data = []
+    
+    for name, df in [("Marketing", marketing_df), ("Operations", ops_df), ("Sales", sales_df), ("Payouts", payout_df)]:
+        # Find date column for each file
+        date_col = None
+        if name == "Marketing" and "Date" in df.columns:
+            date_col = "Date"
+        elif name == "Operations" and "Start Date" in df.columns:
+            date_col = "Start Date"
+        elif name == "Sales" and "Start Date" in df.columns:
+            date_col = "Start Date"
+        elif name == "Payouts" and "Payout Date" in df.columns:
+            date_col = "Payout Date"
+        
+        # Calculate date range
+        date_range = "N/A"
+        if date_col and not df.empty:
+            dates = pd.to_datetime(df[date_col], errors='coerce').dropna()
+            if len(dates) > 0:
+                date_range = f"{dates.min().strftime('%Y-%m-%d')} to {dates.max().strftime('%Y-%m-%d')}"
+        
+        # Count unique stores
+        unique_stores = 0
+        if "Store Name" in df.columns:
+            unique_stores = len(df["Store Name"].dropna().unique())
+        elif "Store ID" in df.columns:
+            unique_stores = len(df["Store ID"].dropna().unique())
+        
+        # Count unique campaigns
+        unique_campaigns = 0
+        campaign_cols = [col for col in df.columns if 'campaign' in col.lower()]
+        for col in campaign_cols:
+            unique_campaigns += len(df[col].dropna().unique())
+        
+        file_data.append({
+            "File": name,
+            "Rows": len(df),
+            "Columns": len(df.columns),
+            "Unique Stores": unique_stores,
+            "Unique Campaigns": unique_campaigns,
+            "Date Range": date_range
+        })
+    
+    file_df = pd.DataFrame(file_data)
+    st.dataframe(file_df, use_container_width=True)
+    
+    # Detailed column analysis by file
+    st.markdown("### Important Columns by File")
+    
+    for name, df in [("Marketing", marketing_df), ("Operations", ops_df), ("Sales", sales_df), ("Payouts", payout_df)]:
+        if not df.empty:
+            st.markdown(f"**{name} File:**")
+            
+            # Find important columns
+            important_cols = []
+            key_metrics = [
+                'orders', 'sales', 'revenue', 'commission', 'payout', 'rating', 
+                'delivery', 'cancellation', 'downtime', 'promotion', 'ad', 'discount',
+                'campaign', 'store', 'date', 'customer', 'fee', 'charge'
+            ]
+            
+            for col in df.columns:
+                col_lower = col.lower()
+                if any(metric in col_lower for metric in key_metrics):
+                    unique_count = len(df[col].dropna().unique())
+                    important_cols.append({
+                        "Column": col,
+                        "Unique Values": unique_count,
+                        "Data Type": str(df[col].dtype)
+                    })
+            
+            if important_cols:
+                col_df = pd.DataFrame(important_cols).sort_values("Unique Values", ascending=False)
+                st.dataframe(col_df, use_container_width=True)
+            else:
+                st.info("No important columns found in this file.")
+            
+            st.markdown("---")
+    
+    # Enhanced Visualizations with colourful themes
+    if px is not None:
+        st.markdown("### 📊 Data Visualizations")
+        st.markdown("*Interactive charts showing data distribution across files*")
+        
+        # Create a 2x2 grid for charts
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # File sizes comparison with enhanced styling
+            fig1 = px.bar(
+                file_df, 
+                x="File", 
+                y="Rows", 
+                title="📈 Number of Rows by File",
+                color="File",
+                color_discrete_sequence=px.colors.qualitative.Set3,
+                template="plotly_dark"
+            )
+            fig1.update_layout(
+                title_font_size=16,
+                title_font_color="#FF6B35",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)"
+            )
+            st.plotly_chart(fig1, use_container_width=True)
+            
+            # Unique stores by file
+            if "Unique Stores" in file_df.columns and file_df["Unique Stores"].sum() > 0:
+                fig3 = px.bar(
+                    file_df, 
+                    x="File", 
+                    y="Unique Stores", 
+                    title="🏪 Unique Stores by File",
+                    color="File",
+                    color_discrete_sequence=px.colors.qualitative.Pastel,
+                    template="plotly_dark"
+                )
+                fig3.update_layout(
+                    title_font_size=16,
+                    title_font_color="#FF6B35",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)"
+                )
+                st.plotly_chart(fig3, use_container_width=True)
+        
+        with col2:
+            # Column count comparison with enhanced styling
+            fig2 = px.bar(
+                file_df, 
+                x="File", 
+                y="Columns", 
+                title="📋 Number of Columns by File",
+                color="File",
+                color_discrete_sequence=px.colors.qualitative.Set1,
+                template="plotly_dark"
+            )
+            fig2.update_layout(
+                title_font_size=16,
+                title_font_color="#FF6B35",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)"
+            )
+            st.plotly_chart(fig2, use_container_width=True)
+            
+            # Unique campaigns by file
+            if "Unique Campaigns" in file_df.columns and file_df["Unique Campaigns"].sum() > 0:
+                fig4 = px.bar(
+                    file_df, 
+                    x="File", 
+                    y="Unique Campaigns", 
+                    title="📢 Unique Campaigns by File",
+                    color="File",
+                    color_discrete_sequence=px.colors.qualitative.Set2,
+                    template="plotly_dark"
+                )
+                fig4.update_layout(
+                    title_font_size=16,
+                    title_font_color="#FF6B35",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)"
+                )
+                st.plotly_chart(fig4, use_container_width=True)
+        
+        # Enhanced Summary Statistics
+        st.markdown("### 📊 Summary Statistics")
+        st.markdown("*Overall data summary across all datasets*")
+        
+        summary_data = {
+            "📁 Metric": ["Total Files", "Total Rows", "Total Columns", "Total Unique Stores", "Total Unique Campaigns"],
+            "📈 Value": [
+                files_count,
+                total_rows,
+                total_columns,
+                len(all_stores),
+                len(all_campaigns)
+            ]
+        }
+        summary_df = pd.DataFrame(summary_data)
+        
+        # Style the dataframe with custom CSS
+        st.markdown("""
+        <style>
+        .summary-table {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 10px 0;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        st.dataframe(
+            summary_df, 
+            use_container_width=True,
+            hide_index=True
+        )
 
 
 # -------------------------------
@@ -742,17 +1170,138 @@ def section_overview(marketing_df: pd.DataFrame, ops_df: pd.DataFrame, sales_df:
 # -------------------------------
 
 def main():
-    st.set_page_config(page_title="DoorDash Performance Dashboard", layout="wide")
-    st.title("DoorDash Performance Dashboard")
+    st.set_page_config(
+        page_title="🚀 DoorDash Performance Dashboard", 
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
+    # Custom CSS for enhanced styling
+    st.markdown("""
+    <style>
+    .main-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        text-align: center;
+        color: white;
+    }
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 15px;
+        border-radius: 10px;
+        margin: 10px 0;
+        color: white;
+    }
+    .success-message {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        padding: 15px;
+        border-radius: 10px;
+        margin: 10px 0;
+        color: white;
+        text-align: center;
+    }
+    .stMetric {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        padding: 10px;
+        border-radius: 8px;
+        margin: 5px 0;
+        color: white !important;
+    }
+    .stMetric label {
+        color: white !important;
+    }
+    .stMetric div[data-testid="metric-container"] {
+        color: white !important;
+    }
+    .stMetric div[data-testid="metric-container"] label {
+        color: white !important;
+    }
+    .stMetric div[data-testid="metric-container"] div {
+        color: white !important;
+    }
+    .stMetric div[data-testid="metric-container"] span {
+        color: white !important;
+    }
+    .stButton > button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 8px 16px;
+        font-weight: 500;
+        transition: all 0.3s ease;
+    }
+    .stButton > button:hover {
+        background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    .stButton > button:active {
+        transform: translateY(0);
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Colourful header with icon
+    if colored_header:
+        colored_header(
+            label="🚀 DoorDash Performance Dashboard",
+            description="Comprehensive analytics and insights for DoorDash operations",
+            color_name="orange-70"
+        )
+    else:
+        st.markdown('<div class="main-header"><h1>🚀 DoorDash Performance Dashboard</h1><p>Comprehensive analytics and insights for DoorDash operations</p></div>', unsafe_allow_html=True)
 
     # Load data
-    mk = load_csv(CSV_FILES["marketing"])  # marketing
-    ops = load_csv(CSV_FILES["operations"])  # operations
-    pay = load_csv(CSV_FILES["payouts"])  # payouts
-    sal = load_csv(CSV_FILES["sales"])  # sales
+    with st.spinner("🚀 Loading DoorDash datasets..."):
+        mk = load_csv(CSV_FILES["marketing"])  # marketing
+        ops = load_csv(CSV_FILES["operations"])  # operations
+        pay = load_csv(CSV_FILES["payouts"])  # payouts
+        sal = load_csv(CSV_FILES["sales"])  # sales
+    
+    # Success message with animation
+    if st_lottie:
+        try:
+            # Simple success animation
+            st_lottie(
+                "https://assets5.lottiefiles.com/packages/lf20_49rdyysj.json",
+                height=100,
+                key="success"
+            )
+        except:
+            st.success("✅ All datasets loaded successfully!")
+    else:
+        st.success("✅ All datasets loaded successfully!")
 
-    # Global date filters in sidebar
-    st.sidebar.header("Global Filters")
+    # Enhanced sidebar with clickable buttons
+    with st.sidebar:
+        st.header("📊 Dashboard Navigation")
+        
+        # Create buttons for navigation
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("🏠 Overview", key="btn_overview", use_container_width=True):
+                selected = "Overview"
+            if st.button("📢 Marketing", key="btn_marketing", use_container_width=True):
+                selected = "Marketing"
+            if st.button("⚙️ Operations", key="btn_operations", use_container_width=True):
+                selected = "Operations"
+        
+        with col2:
+            if st.button("💰 Sales", key="btn_sales", use_container_width=True):
+                selected = "Sales"
+            if st.button("💸 Payouts", key="btn_payouts", use_container_width=True):
+                selected = "Payouts"
+        
+        # Default selection if no button is clicked
+        if 'selected' not in locals():
+            selected = "Overview"
+
+        st.markdown("---")
+        st.header("🔍 Global Filters")
     # Determine min/max dates across datasets for convenience
     date_candidates: List[Tuple[pd.Series, str]] = []
     if "Date" in mk.columns:
@@ -785,20 +1334,16 @@ def main():
         if "Start Date" in sal.columns:
             sal = filter_df_by_date(sal, "Start Date", start_date, end_date)
 
-    # Tabs
-    tab_overview, tab_marketing, tab_operations, tab_sales, tab_payouts = st.tabs(
-        ["Overview", "Marketing", "Operations", "Sales", "Payouts"]
-    )
-
-    with tab_overview:
+    # Enhanced navigation based on selected option
+    if selected == "Overview":
         section_overview(mk, ops, sal, pay)
-    with tab_marketing:
+    elif selected == "Marketing":
         section_marketing(mk)
-    with tab_operations:
+    elif selected == "Operations":
         section_operations(ops)
-    with tab_sales:
+    elif selected == "Sales":
         section_sales(sal)
-    with tab_payouts:
+    elif selected == "Payouts":
         section_payouts(pay)
 
 

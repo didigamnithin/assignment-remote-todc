@@ -5,3 +5,7 @@ numpy==2.0.2
 statsmodels==0.14.5
 prophet==1.1.7
 scikit-learn==1.6.1
+streamlit-extras==0.3.6
+streamlit-option-menu==0.3.12
+streamlit-card==0.0.5
+streamlit-lottie==0.0.5
