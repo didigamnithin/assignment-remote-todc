@@ -1394,10 +1394,10 @@ def section_payouts(payout_df: pd.DataFrame):
                     
                     with rank_cols[3]:
                         if store_rank > 1:
-                            gap_sales = store_sales - next_store["Sales"]
-                            st.metric("Sales Gap to Next", f"${gap_sales:,.0f}")
+                            gap_payout = store_net_payout - next_store
+                            st.metric("Payout Gap to Next", f"${gap_payout:,.0f}")
                         else:
-                            st.metric("Sales Gap to Next", "🏆 Top Store")
+                            st.metric("Payout Gap to Next", "🏆 Top Store")
                     
                     # Top 5 stores comparison
                     st.markdown("**🏆 Top 5 Stores by Net Payout**")
